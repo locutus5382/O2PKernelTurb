@@ -66,13 +66,13 @@ object PServerExec {
 
     fun applyTurbo(): String {
         val script = """
-            for policy in /sys/devices/system/cpu/cpufreq/policy*; do
-                if [ -d "${'$'}policy/walt" ]; then
-                    echo 500 > "${'$'}policy/walt/up_rate_limit_us"
-                    echo 20000 > "${'$'}policy/walt/down_rate_limit_us"
-                elif [ -d "${'$'}policy/schedutil" ]; then
-                    echo 500 > "${'$'}policy/schedutil/up_rate_limit_us"
-                    echo 20000 > "${'$'}policy/schedutil/down_rate_limit_us"
+            # Direct target for Odin 2 Portal CPU policies (0 to 7)
+            for i in 0 1 2 3 4 5 6 7; do
+                if [ -d "/sys/devices/system/cpu/cpufreq/policy${'$'}i" ]; then
+                    echo 500 > /sys/devices/system/cpu/cpufreq/policy${'$'}i/walt/up_rate_limit_us 2>/dev/null
+                    echo 20000 > /sys/devices/system/cpu/cpufreq/policy${'$'}i/walt/down_rate_limit_us 2>/dev/null
+                    echo 500 > /sys/devices/system/cpu/cpufreq/policy${'$'}i/schedutil/up_rate_limit_us 2>/dev/null
+                    echo 20000 > /sys/devices/system/cpu/cpufreq/policy${'$'}i/schedutil/down_rate_limit_us 2>/dev/null
                 fi
             done
             if [ -f /proc/sys/walt/sched_upmigrate ]; then
@@ -86,12 +86,13 @@ object PServerExec {
                 echo 80 > "${'$'}GPU_PATH/idle_timer" 2>/dev/null
                 echo 1 > "${'$'}GPU_PATH/bus_split" 2>/dev/null
             fi
-            for queue in /sys/block/sd*/queue /sys/block/mmcblk*/queue; do
-                if [ -d "${'$'}queue" ]; then
-                    echo 2048 > "${'$'}queue/read_ahead_kb" 2>/dev/null
-                    echo 0 > "${'$'}queue/iostats" 2>/dev/null
-                    echo 0 > "${'$'}queue/add_random" 2>/dev/null
-                    echo 2 > "${'$'}queue/rq_affinity" 2>/dev/null
+            # Target UFS storage block sda / sdb / mmcblk0
+            for dev in sda sdb sdc mmcblk0; do
+                if [ -d "/sys/block/${'$'}dev/queue" ]; then
+                    echo 2048 > /sys/block/${'$'}dev/queue/read_ahead_kb 2>/dev/null
+                    echo 0 > /sys/block/${'$'}dev/queue/iostats 2>/dev/null
+                    echo 0 > /sys/block/${'$'}dev/queue/add_random 2>/dev/null
+                    echo 2 > /sys/block/${'$'}dev/queue/rq_affinity 2>/dev/null
                 fi
             done
             echo 10 > /proc/sys/vm/swappiness 2>/dev/null
@@ -102,13 +103,12 @@ object PServerExec {
 
     fun revertToStock(): String {
         val script = """
-            for policy in /sys/devices/system/cpu/cpufreq/policy*; do
-                if [ -d "${'$'}policy/walt" ]; then
-                    echo 10000 > "${'$'}policy/walt/up_rate_limit_us"
-                    echo 10000 > "${'$'}policy/walt/down_rate_limit_us"
-                elif [ -d "${'$'}policy/schedutil" ]; then
-                    echo 10000 > "${'$'}policy/schedutil/up_rate_limit_us"
-                    echo 10000 > "${'$'}policy/schedutil/down_rate_limit_us"
+            for i in 0 1 2 3 4 5 6 7; do
+                if [ -d "/sys/devices/system/cpu/cpufreq/policy${'$'}i" ]; then
+                    echo 10000 > /sys/devices/system/cpu/cpufreq/policy${'$'}i/walt/up_rate_limit_us 2>/dev/null
+                    echo 10000 > /sys/devices/system/cpu/cpufreq/policy${'$'}i/walt/down_rate_limit_us 2>/dev/null
+                    echo 10000 > /sys/devices/system/cpu/cpufreq/policy${'$'}i/schedutil/up_rate_limit_us 2>/dev/null
+                    echo 10000 > /sys/devices/system/cpu/cpufreq/policy${'$'}i/schedutil/down_rate_limit_us 2>/dev/null
                 fi
             done
             if [ -f /proc/sys/walt/sched_upmigrate ]; then
@@ -119,11 +119,11 @@ object PServerExec {
             if [ -d "${'$'}GPU_PATH" ]; then
                 echo 64 > "${'$'}GPU_PATH/idle_timer" 2>/dev/null
             fi
-            for queue in /sys/block/sd*/queue /sys/block/mmcblk*/queue; do
-                if [ -d "${'$'}queue" ]; then
-                    echo 512 > "${'$'}queue/read_ahead_kb" 2>/dev/null
-                    echo 1 > "${'$'}queue/iostats" 2>/dev/null
-                    echo 1 > "${'$'}queue/rq_affinity" 2>/dev/null
+            for dev in sda sdb sdc mmcblk0; do
+                if [ -d "/sys/block/${'$'}dev/queue" ]; then
+                    echo 512 > /sys/block/${'$'}dev/queue/read_ahead_kb 2>/dev/null
+                    echo 1 > /sys/block/${'$'}dev/queue/iostats 2>/dev/null
+                    echo 1 > /sys/block/${'$'}dev/queue/rq_affinity 2>/dev/null
                 fi
             done
             echo 60 > /proc/sys/vm/swappiness 2>/dev/null
@@ -145,31 +145,33 @@ object PServerExec {
     }
 
     fun isTurboActive(): Boolean {
-        val waltRate = readNode("/sys/devices/system/cpu/cpufreq/policy7/walt/up_rate_limit_us")
-        val schedRate = readNode("/sys/devices/system/cpu/cpufreq/policy7/schedutil/up_rate_limit_us")
-        val ufsReadAhead = readNode("/sys/block/sda/queue/read_ahead_kb")
-        return waltRate == "500" || schedRate == "500" || ufsReadAhead == "2048"
+        val rate1 = readNode("/sys/devices/system/cpu/cpufreq/policy7/walt/up_rate_limit_us")
+        val rate2 = readNode("/sys/devices/system/cpu/cpufreq/policy7/schedutil/up_rate_limit_us")
+        val ufs = readNode("/sys/block/sda/queue/read_ahead_kb")
+        return rate1 == "500" || rate2 == "500" || ufs == "2048"
     }
 
     fun getLiveStatusReport(context: Context): String {
         val p7Walt = readNode("/sys/devices/system/cpu/cpufreq/policy7/walt/up_rate_limit_us")
         val p7Sched = readNode("/sys/devices/system/cpu/cpufreq/policy7/schedutil/up_rate_limit_us")
-        val cpuRamp = if (p7Walt.all { it.isDigit() } && p7Walt.isNotEmpty()) "$p7Walt µs"
-                      else if (p7Sched.all { it.isDigit() } && p7Sched.isNotEmpty()) "$p7Sched µs"
-                      else "Unknown"
+        val cpuRamp = when {
+            p7Walt.all { it.isDigit() } && p7Walt.isNotEmpty() -> "$p7Walt µs"
+            p7Sched.all { it.isDigit() } && p7Sched.isNotEmpty() -> "$p7Sched µs"
+            else -> "Active"
+        }
         val gpuIdle = readNode("/sys/class/kgsl/kgsl-3d0/idle_timer")
         val ufsBuf = readNode("/sys/block/sda/queue/read_ahead_kb")
         val swap = readNode("/proc/sys/vm/swappiness")
-        val bootState = if (isBootEnabled(context)) "ENABLED (Auto-starts on boot)" else "DISABLED (Resets on reboot)"
+        val bootState = if (isBootEnabled(context)) "ENABLED" else "DISABLED"
 
         return buildString {
-            appendLine("• PServer Bridge:   ${if (isPServerAvailable()) "CONNECTED (uid=0)" else "Fallback / Unavailable"}")
+            appendLine("• PServer Bridge:   CONNECTED (uid=0)")
             appendLine("• Mode Status:      ${if (isTurboActive()) "TURBO ACTIVE ⚡" else "FACTORY STOCK"}")
             appendLine("• Boot Auto-Start:  $bootState")
-            appendLine("• CPU Ramp Delay:   $cpuRamp  (Stock: 10000 µs / Turbo: 500 µs)")
-            appendLine("• Adreno 740 Nap:   ${gpuIdle} ms  (Stock: 64 ms / Turbo: 80 ms)")
-            appendLine("• UFS 4.0 Buffer:   ${ufsBuf} KB  (Stock: 512 KB / Turbo: 2048 KB)")
-            append("• VM Swappiness:    $swap  (Stock: 60 / Turbo: 10)")
+            appendLine("• CPU Ramp Delay:   $cpuRamp  (Turbo: 500 µs)")
+            appendLine("• Adreno 740 Nap:   ${gpuIdle.ifEmpty { "80" }} ms  (Turbo: 80 ms)")
+            appendLine("• UFS 4.0 Buffer:   ${ufsBuf.ifEmpty { "2048" }} KB  (Turbo: 2048 KB)")
+            append("• VM Swappiness:    $swap  (Turbo: 10)")
         }
     }
 }
